@@ -3,15 +3,17 @@ import {
   getAllPosts as getAllPostsService,
   getPostById as getPostByIdService,
   updatePost as updatePostService,
-  deletePost as deletePostService
+  deletePost as deletePostService,
+  getPostsByAuthor as getPostsByAuthorService
 } from '../services/post.service.js'
 
 async function createPost(req, res, next) {
   try {
-    const { content, image } = req.body
+    const { content } = req.body
     const authorId = req.userData.id
+    const imageUrl = req.file ? req.file.location : null
 
-    const post = await createPostService(authorId, content, image)
+    const post = await createPostService(authorId, content, imageUrl)
     res.status(201).send({
       status: 'success',
       message: 'Post created successfully',
@@ -59,10 +61,11 @@ async function getPostById(req, res, next) {
 async function updatePost(req, res, next) {
   try {
     const { postId } = req.params
-    const { content, image } = req.body
+    const { content } = req.body
     const authorId = req.userData.id
+    const imageUrl = req.file ? req.file.location : null
 
-    const post = await updatePostService(postId, authorId, content, image)
+    const post = await updatePostService(postId, authorId, content, imageUrl)
     res.status(200).send({
       status: 'success',
       message: 'Post updated successfully',
@@ -88,10 +91,30 @@ async function deletePost(req, res, next) {
   }
 }
 
+async function getPostsByAuthor(req, res, next) {
+  try {
+    const { authorId } = req.params
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 10
+    const userId = req.userData.id // Always available due to checkAuth middleware
+
+    const result = await getPostsByAuthorService(authorId, page, limit, userId)
+    res.status(200).send({
+      status: 'success',
+      message: 'Posts retrieved successfully',
+      data: result.posts,
+      pagination: result.pagination
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 export {
   createPost,
   getAllPosts,
   getPostById,
   updatePost,
-  deletePost
+  deletePost,
+  getPostsByAuthor
 }

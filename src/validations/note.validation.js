@@ -1,8 +1,9 @@
 import Joi from '@hapi/joi'
 
-const createPostValidation = (req, res, next) => {
+const createNoteValidation = (req, res, next) => {
   const schema = Joi.object({
-    content: Joi.string().required().min(1).max(1000).trim()
+    title: Joi.string().required().min(1).max(200).trim(),
+    content: Joi.string().required().min(1).max(5000).trim()
   })
 
   const { error } = schema.validate(req.body)
@@ -15,9 +16,10 @@ const createPostValidation = (req, res, next) => {
   next()
 }
 
-const updatePostValidation = (req, res, next) => {
+const updateNoteValidation = (req, res, next) => {
   const schema = Joi.object({
-    content: Joi.string().required().min(1).max(1000).trim()
+    title: Joi.string().required().min(1).max(200).trim(),
+    content: Joi.string().required().min(1).max(5000).trim()
   })
 
   const { error } = schema.validate(req.body)
@@ -30,15 +32,15 @@ const updatePostValidation = (req, res, next) => {
   next()
 }
 
-const postIdValidation = (req, res, next) => {
+const noteIdValidation = (req, res, next) => {
   const schema = Joi.object({
-    postId: Joi.string().hex().length(24).required()
+    noteId: Joi.string().hex().length(24).required()
   })
 
   const { error } = schema.validate(req.params)
   if (error) {
     const err = new Error()
-    err.message = 'Invalid post ID'
+    err.message = 'Invalid note ID'
     err.status = 400
     return next(err)
   }
@@ -62,26 +64,9 @@ const paginationValidation = (req, res, next) => {
   next()
 }
 
-// Validation for authorId parameter
-const authorIdValidation = (req, res, next) => {
-  const schema = Joi.object({
-    authorId: Joi.string().hex().length(24).required()
-  })
-
-  const { error } = schema.validate(req.params)
-  if (error) {
-    const err = new Error()
-    err.message = 'Invalid author ID'
-    err.status = 400
-    return next(err)
-  }
-  next()
-}
-
 export {
-  createPostValidation,
-  updatePostValidation,
-  postIdValidation,
-  paginationValidation,
-  authorIdValidation
+  createNoteValidation,
+  updateNoteValidation,
+  noteIdValidation,
+  paginationValidation
 }
