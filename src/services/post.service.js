@@ -1,5 +1,7 @@
 import Post from '../models/post.js'
 import Like from '../models/like.js'
+import { getBlockedUserIdsService, getUsersWhoBlockedMeService } from './block.service.js'
+import { deleteFromS3 } from '../utils/s3.js'
 
 async function createPost(authorId, content, image = null) {
   try {
@@ -9,7 +11,7 @@ async function createPost(authorId, content, image = null) {
       image
     }).save()
     
-    return post.populate('author', 'email')
+    return post.populate('author', 'email profileImage')
   } catch (error) {
     const err = new Error()
     err.message = error.message
@@ -21,13 +23,27 @@ async function createPost(authorId, content, image = null) {
 async function getAllPosts(page = 1, limit = 10, userId = null) {
   try {
     const skip = (page - 1) * limit
-    const posts = await Post.find()
-      .populate('author', 'email')
+    
+    // Get blocked users and users who blocked current user
+    let excludedUserIds = []
+    if (userId) {
+      const blockedByMe = await getBlockedUserIdsService(userId)
+      const whoBlockedMe = await getUsersWhoBlockedMeService(userId)
+      excludedUserIds = [...blockedByMe, ...whoBlockedMe]
+    }
+    
+    // Build query to exclude posts from blocked users
+    const query = excludedUserIds.length > 0 
+      ? { author: { $nin: excludedUserIds } }
+      : {}
+    
+    const posts = await Post.find(query)
+      .populate('author', 'email profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
     
-    const totalPosts = await Post.countDocuments()
+    const totalPosts = await Post.countDocuments(query)
     
     // If userId is provided, check which posts are liked by the user
     let postsWithLikeStatus = posts
@@ -73,13 +89,27 @@ async function getAllPosts(page = 1, limit = 10, userId = null) {
 async function getPostById(postId, userId = null) {
   try {
     const post = await Post.findById(postId)
-      .populate('author', 'email')
+      .populate('author', 'email profileImage')
     
     if (!post) {
       const err = new Error()
       err.message = 'Post not found'
       err.status = 404
       throw err
+    }
+    
+    // Check if post author is blocked or has blocked current user
+    if (userId) {
+      const blockedByMe = await getBlockedUserIdsService(userId)
+      const whoBlockedMe = await getUsersWhoBlockedMeService(userId)
+      const authorId = post.author._id.toString()
+      
+      if (blockedByMe.includes(authorId) || whoBlockedMe.includes(authorId)) {
+        const err = new Error()
+        err.message = 'Post not found'
+        err.status = 404
+        throw err
+      }
     }
     
     // If userId is provided, check if user has liked this post
@@ -112,12 +142,22 @@ async function updatePost(postId, authorId, content, image = null) {
     }
     
     post.content = content
+    
+    // If new image is uploaded, delete old image from S3
+    if (image !== null && post.image) {
+      try {
+        await deleteFromS3(post.image)
+      } catch (error) {
+        console.error('Error deleting old post image:', error)
+      }
+    }
+    
     if (image !== null) {
       post.image = image
     }
     
     await post.save()
-    return post.populate('author', 'email')
+    return post.populate('author', 'email profileImage')
   } catch (error) {
     const err = new Error()
     err.message = error.message
@@ -137,7 +177,68 @@ async function deletePost(postId, authorId) {
       throw err
     }
     
+    // Delete image from S3 if exists
+    if (post.image) {
+      try {
+        await deleteFromS3(post.image)
+      } catch (error) {
+        console.error('Error deleting post image from S3:', error)
+      }
+    }
+    
     return { message: 'Post deleted successfully' }
+  } catch (error) {
+    const err = new Error()
+    err.message = error.message
+    err.status = error.status || 500
+    throw err
+  }
+}
+
+async function getPostsByAuthor(authorId, page = 1, limit = 10, userId = null) {
+  try {
+    const skip = (page - 1) * limit
+    const posts = await Post.find({ author: authorId })
+      .populate('author', 'email profileImage')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+    
+    const totalPosts = await Post.countDocuments({ author: authorId })
+    
+    // If userId is provided, check which posts are liked by the user
+    let postsWithLikeStatus = posts
+    if (userId) {
+      // Get all post IDs
+      const postIds = posts.map(post => post._id)
+      
+      // Find likes by this user for these posts
+      const userLikes = await Like.find({
+        postId: { $in: postIds },
+        userId: userId
+      }).select('postId')
+      
+      // Create a Set of liked post IDs for quick lookup
+      const likedPostIds = new Set(userLikes.map(like => like.postId.toString()))
+      
+      // Add isLikedByUser field to each post
+      postsWithLikeStatus = posts.map(post => {
+        const postObj = post.toObject()
+        postObj.isLikedByUser = likedPostIds.has(post._id.toString())
+        return postObj
+      })
+    }
+    
+    return {
+      posts: postsWithLikeStatus,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalPosts / limit),
+        totalPosts,
+        hasNext: page < Math.ceil(totalPosts / limit),
+        hasPrev: page > 1
+      }
+    }
   } catch (error) {
     const err = new Error()
     err.message = error.message
@@ -151,5 +252,6 @@ export {
   getAllPosts,
   getPostById,
   updatePost,
-  deletePost
+  deletePost,
+  getPostsByAuthor
 }

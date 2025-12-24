@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 
 import User from '../models/user.js'
+import { deleteFromS3 } from '../utils/s3.js'
 
 async function signupService ({ email, password }) {
   try {
@@ -91,8 +92,155 @@ async function getUserListService(currentUserId) {
   }
 }
 
+async function getUserByIdService(userId) {
+  try {
+    const user = await User.findById(userId, { password: 0 })
+    
+    if (!user) {
+      const err = new Error()
+      err.message = 'User not found'
+      err.status = 404
+      throw err
+    }
+    
+    return user
+  } catch (error) {
+    const err = new Error()
+    err.message = error.message
+    err.status = error.status || 500
+    throw err
+  }
+}
+
+async function getCurrentUserService(userId) {
+  try {
+    const user = await User.findById(userId, { password: 0 })
+    
+    if (!user) {
+      const err = new Error()
+      err.message = 'User not found'
+      err.status = 404
+      throw err
+    }
+    
+    return user
+  } catch (error) {
+    const err = new Error()
+    err.message = error.message
+    err.status = error.status || 500
+    throw err
+  }
+}
+
+async function updateUserService(userId, updateData) {
+  try {
+    const user = await User.findById(userId)
+    
+    if (!user) {
+      const err = new Error()
+      err.message = 'User not found'
+      err.status = 404
+      throw err
+    }
+    
+    // If password is being updated, hash it
+    if (updateData.password) {
+      updateData.password = await bcrypt.hash(updateData.password, 10)
+    }
+    
+    // Update user fields
+    Object.assign(user, updateData)
+    await user.save()
+    
+    // Return user without password
+    const updatedUser = await User.findById(userId, { password: 0 })
+    return updatedUser
+  } catch (error) {
+    const err = new Error()
+    err.message = error.message
+    err.status = error.status || 500
+    throw err
+  }
+}
+
+async function uploadProfileImageService(userId, imageUrl) {
+  try {
+    const user = await User.findById(userId)
+    
+    if (!user) {
+      const err = new Error()
+      err.message = 'User not found'
+      err.status = 404
+      throw err
+    }
+    
+    // Delete old profile image from S3 if exists
+    if (user.profileImage) {
+      try {
+        await deleteFromS3(user.profileImage)
+      } catch (error) {
+        console.error('Error deleting old profile image:', error)
+      }
+    }
+    
+    // Update user with new profile image URL
+    user.profileImage = imageUrl
+    await user.save()
+    
+    // Return user without password
+    const updatedUser = await User.findById(userId, { password: 0 })
+    return updatedUser
+  } catch (error) {
+    const err = new Error()
+    err.message = error.message
+    err.status = error.status || 500
+    throw err
+  }
+}
+
+async function deleteProfileImageService(userId) {
+  try {
+    const user = await User.findById(userId)
+    
+    if (!user) {
+      const err = new Error()
+      err.message = 'User not found'
+      err.status = 404
+      throw err
+    }
+    
+    if (!user.profileImage) {
+      const err = new Error()
+      err.message = 'No profile image to delete'
+      err.status = 400
+      throw err
+    }
+    
+    // Delete profile image from S3
+    await deleteFromS3(user.profileImage)
+    
+    // Remove profile image URL from user
+    user.profileImage = null
+    await user.save()
+    
+    // Return user without password
+    const updatedUser = await User.findById(userId, { password: 0 })
+    return updatedUser
+  } catch (error) {
+    const err = new Error()
+    err.message = error.message
+    err.status = error.status || 500
+    throw err
+  }
+}
+
 export {
   signupService,
   signinService,
-  getUserListService
+  getUserListService,
+  getUserByIdService,
+  getCurrentUserService,
+  updateUserService,
+  uploadProfileImageService,
+  deleteProfileImageService
 }
