@@ -9,6 +9,8 @@ import {
   deleteProfileImageService
 } from '../services/user.service.js'
 
+import User from '../models/user.js';
+
 async function signup (req, res, next) {
   try {
     const { email, password } = req.body
